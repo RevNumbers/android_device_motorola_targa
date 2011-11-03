@@ -11,4 +11,4 @@ rm -f /data/app/*ootstrap*
 rm -f /system/app/*ootstrap*
 
 # kill off our release utilities (not needed on-system)
-rm -r -f /system/etc/releaseutils
+rm -r -f /system/etc/finalize_release

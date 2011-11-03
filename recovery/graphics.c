@@ -28,15 +28,10 @@
 #include <linux/kd.h>
 
 #include <pixelflinger/pixelflinger.h>
-#include <cutils/memory.h>
 
-#ifndef BOARD_LDPI_RECOVERY
-	#include "font_10x18.h"
-#else
-	#include "font_7x16.h"
-#endif
-
+#include "font_10x18.h"
 #include "minui.h"
+#include <cutils/memory.h>
 
 typedef struct {
     GGLSurface texture;
@@ -94,7 +89,6 @@ static int get_framebuffer(GGLSurface *fb)
     fb->stride = fi.line_length / (vi.bits_per_pixel / 8);
     fb->data = bits;
     fb->format = GGL_PIXEL_FORMAT_RGB_565;
-    memset(fb->data, 0, fb->height * fb->stride * (vi.bits_per_pixel / 8));
 
     fb++;
 
@@ -102,9 +96,8 @@ static int get_framebuffer(GGLSurface *fb)
     fb->width = vi.xres;
     fb->height = vi.yres;
     fb->stride = fi.line_length / (vi.bits_per_pixel / 8);
-    fb->data = (void*) (((unsigned) bits) + (fb->height * fb->stride * vi.bits_per_pixel / 8));
+    fb->data = (void*) (((unsigned) bits) + (vi.yres * fi.line_length));
     fb->format = GGL_PIXEL_FORMAT_RGB_565;
-    memset(fb->data, 0, fb->height * fb->stride * (vi.bits_per_pixel / 8));
 
     return fd;
 }
@@ -114,7 +107,7 @@ static void get_memory_surface(GGLSurface* ms) {
   ms->width = vi.xres;
   ms->height = vi.yres;
   ms->stride = fi.line_length / (vi.bits_per_pixel / 8);
-  ms->data = malloc(ms->stride * ms->height * 2);
+  ms->data = malloc(fi.line_length * vi.yres);
   ms->format = GGL_PIXEL_FORMAT_RGB_565;
 }
 
@@ -135,14 +128,12 @@ void gr_flip_32(unsigned *bits, unsigned short *ptr, unsigned count)
         uint32_t rgb32, red, green, blue, alpha;
 
         /* convert 16 bits to 32 bits */
-        
         rgb32 = ptr[i];
         red = (rgb32 & 0x1f) << 3; // shift left 3 for full precision
         green = (rgb32 & 0x7E0) << 5; // shift right 5 to align, shift left 2 for full precision, shift left 8 for rgb
         blue = (rgb32 & 0xF800) << 8; // shift right 11 to aligh, shift left 3 for full precision, left 16 for rgb 
-        
+
         rgb32 = 0xFF000000 | red | green | blue;
-        
         android_memset32((uint32_t *)bits, rgb32, 4);
         i++;
         bits++;
@@ -156,31 +147,19 @@ void gr_flip(void)
     /* swap front and back buffers */
     gr_active_fb = (gr_active_fb + 1) & 1;
 
-#ifdef BOARD_HAS_FLIPPED_SCREEN
-    /* flip buffer 180 degrees for devices with physicaly inverted screens */
-    unsigned int i;
-    for (i = 1; i < (vi.xres * vi.yres); i++) {
-        unsigned short tmp = gr_mem_surface.data[i];
-        gr_mem_surface.data[i] = gr_mem_surface.data[(vi.xres * vi.yres * 2) - i];
-        gr_mem_surface.data[(vi.xres * vi.yres * 2) - i] = tmp;
-    }
-#endif
-
     /* copy data from the in-memory surface to the buffer we're about
      * to make active. */
     if( vi.bits_per_pixel == 16)
     {
-        memcpy(gr_framebuffer[gr_active_fb].data, gr_mem_surface.data,
-               vi.xres * vi.yres * 2);
+    memcpy(gr_framebuffer[gr_active_fb].data, gr_mem_surface.data,
+           fi.line_length * vi.yres);
     }
     else
     {
-        gr_flip_32((unsigned *)gr_framebuffer[gr_active_fb].data,
-                   (unsigned short *)gr_mem_surface.data,
-                   (gr_framebuffer[gr_active_fb].stride
-                    * gr_framebuffer[gr_active_fb].height));
+        gr_flip_32((unsigned *)gr_framebuffer[gr_active_fb].data, \
+                   (unsigned short *)gr_mem_surface.data, \
+                   ((fi.line_length / (vi.bits_per_pixel / 8)) * vi.yres));
     }
-
     /* inform the display driver */
     set_active_framebuffer(gr_active_fb);
 }
@@ -324,6 +303,7 @@ int gr_init(void)
     gr_active_fb = 0;
     set_active_framebuffer(0);
     gl->colorBuffer(gl, &gr_mem_surface);
+
 
     gl->activeTexture(gl, 0);
     gl->enable(gl, GGL_BLEND);
